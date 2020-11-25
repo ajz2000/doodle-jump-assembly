@@ -16,9 +16,11 @@
 
   #This will be from top left corner of screen
   #And refer to the top left corner of the doodler
-  doodler_x: .word 0                          # Doodler's position x, ie from left of screen
-  doodler_y: .word 0                          # Doodler's position y, ie from top of screen
-  doodler_size: .word 3                       # Doodler's height/width, keeping him square makes life much easier 
+  doodler_x: .word 15                          # Doodler's position x, ie from left of screen
+  doodler_y: .word 15                          # Doodler's position y, ie from top of screen
+  doodler_size: .word 3                        # Doodler's height/width, keeping him square makes life much easier 
+  doodler_jump_height: .word 25
+  doodler_current_jump: .word 10
 
 .globl main
 .text
@@ -33,19 +35,97 @@ init:                            #PROGRAM INITIALIZATION
   mflo $t0                       # $t0 stores result of screen width x height
   la $t1, screen_total_pixels    # $t1 stores the address storing the total # of pixels
   sw $t0, 0($t1)                 # Store the total # of pixels on screen in screen_total_pixels in memory
-
+  jal draw_background            # Draw the full background once
 #CORE LOOP
 core:
-  #Check Keyboard inputs
-  #Update Doodler Position
+  #First Screen Draw
+  la $a0, col_background            #Load the background colour to first param of draw_doodler
+  jal draw_doodler                  #Call draw_doodler
+check_keyboard_input:               # Check for keyboard inputs  
+  lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
+  beq $t0, 0, end_keyboard_input    # $if no keyboard input, skip handler
+keyboard_input:                     # Keyboard input branch handler
+  lw $t0, 0xffff0004                # $t0 gets ascii value of entered key
+  beq $t0, 0x6A, respond_to_j       # if keyboard input j, respond_to_j
+  beq $t0, 0x6B, respond_to_k       # if keyboard input k, respond_to_k
+  j end_keyboard_input              # if input that doesn't do anything, jump to end of keyboard input handling
+respond_to_j:                       # Move Doodler left
+  la $t0, doodler_x                 # $t0 stores the doodler x pos memory location
+  lw $t1 ($t0)                      # $t1 stores the doodler x pos
+  addi $t1, $t1, -1                 # $t1 stores update (-1) doodler x pos 
+  j doodler_screen_wrap
+respond_to_k:                       # Move Doodler right
+  la $t0, doodler_x                 # $t0 stores the doodler x pos memory location
+  lw $t1 ($t0)                      # $t1 stores the doodler x pos
+  addi $t1, $t1, 1                  # $t1 stores update (+1) doodler x pos 
+  j doodler_screen_wrap
+doodler_screen_wrap:
+  li $t2, 31                        # $t2 gets 31
+  and $t1, $t1, $t2                 # $t1 gets doodler's new position mod 32 (Wrap!) NEEDS TO CHANGE IF SCREEN SIZE CHANGES
+  sw $t1, ($t0)                     # Save the doodler's updated x position to memory  
+  j end_keyboard_input
+end_keyboard_input:
+
   #Check Collisions (Doodler, screen)
+  #TEMP REMOVE
+  #TEMP REMOVE
+  #TEMP REMOVE
+  #TEMP REMOVE
+  #Make doodler jump if he hits bottom of screen
+  la $t0, doodler_y                 # $t0 stores the doodler y pos memory location
+  lw $t0 ($t0)                      # $t0 stores the doodler y pos
+  la $t1, screen_height             # $t1 stores the screen height memory location
+  lw $t1 ($t1)                      # $t1 stores the screen height
+  blt $t0, $t1, doodler_trigger_jump_end
+  doodler_trigger_jump:
+  la $t2, doodler_jump_height       # $t2 stores the doodler's max jump height address
+  lw $t2 ($t2)                      # $t2 stores the doodler's max jump height
+  la $t3, doodler_current_jump      # $t3 stores the doodler's cur jump height address
+  lw $t4 ($t3)                      # $t4 stores the doodler's cur jump height
+  move $t4, $t2
+  sw $t4, ($t3)
+  doodler_trigger_jump_end:
+  #TEMP REMOVE
+  #TEMP REMOVE
+  #TEMP REMOVE
+  #TEMP REMOVE
+
   #Check Collisions (Doodler, platforms)
   #Update positions of objects
+  la $t0, screen_height                 # $t0 stores the doodler y pos memory location
+  lw $t1 ($t0)                      # $t1 stores the doodler y pos
+
+  #Update doodler height
+  la $t0, doodler_y                 # $t0 stores the doodler y pos memory location
+  lw $t1 ($t0)                      # $t1 stores the doodler y pos
+#  la $t2, doodler_jump_height       # $t2 stores the doodler's max jump height address
+#  lw $t2 ($t2)                      # $t2 stores the doodler's max jump height
+  la $t3, doodler_current_jump      # $t3 stores the doodler's cur jump height address
+  lw $t4 ($t3)                      # $t4 stores the doodler's cur jump height
+  bgtz $t4, doodler_rise
+doodler_fall:
+  addi $t1, $t1, 1                  # Move the doodler down 1 unit
+  sw $t1, ($t0)                     # Save the doodler's updated y position to memory 
+  j doodler_y_end 
+doodler_rise:
+  addi $t1, $t1, -1                  # Move the doodler up 1 unit
+  sw $t1, ($t0)                     # Save the doodler's updated y position to memory 
+  j doodler_y_end
+doodler_y_end:
+  addi $t4, $t4, -1
+  sw $t4, ($t3)
+
   #Redraw Screen
-  jal draw_background
+  la $a0, col_doodler
   jal draw_doodler
   #Sleep
+  li $v0, 32
+  li $a0, 30
+  syscall
+
+  j core
 #TERMINATION
+gameover:
 exit:
   li $v0, 10            # prepare syscall to terminate the program
 	syscall               # Syscall to terminate the program
@@ -75,7 +155,7 @@ end:
 draw_doodler:                  # Draws the doodler at the x,y position stored in memory
 ####################################################################################################
   lw $t0, display_address	     # $t0 stores the base address for display
-  la $t1, col_doodler          # $t1 stores the address storing the doodler colour
+  move $t1, $a0          # $t1 stores the address storing the doodler colour
   lw $t1, ($t1)	               # $t1 stores the doodler colour
   la $t2, doodler_x           
   lw $t2 ($t2)                 # $t2 stores the doodler x pos
