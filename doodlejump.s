@@ -12,15 +12,19 @@
   col_background: .word 0x9df2eb              # The colour of the background
   screen_height:  .word 32                    # Height of the screen in pixels
   screen_width:   .word 32                    # Width of the screen in pixels
-  screen_total_pixels: .word 0                # Total number of pixels on screen, calulated at initialization
+  screen_total_pixels: .word 0                # Total number of pixels on screen, calculated at initialization
 
   #This will be from top left corner of screen
   #And refer to the top left corner of the doodler
   doodler_x: .word 15                          # Doodler's position x, ie from left of screen
-  doodler_y: .word 15                          # Doodler's position y, ie from top of screen
+  doodler_y: .word 11                          # Doodler's position y, ie from top of screen
   doodler_size: .word 3                        # Doodler's height/width, keeping him square makes life much easier 
   doodler_jump_height: .word 25
-  doodler_current_jump: .word 10
+  doodler_current_jump: .word 0
+
+  platform_num: .word 3
+  platforms: .word 10,10,15,20,15,30     #Position of first platforms in (x,y),(x,y),.... form
+  platform_width: .word 6
 
 .globl main
 .text
@@ -39,8 +43,8 @@ init:                            #PROGRAM INITIALIZATION
 #CORE LOOP
 core:
   #First Screen Draw
-  la $a0, col_background            #Load the background colour to first param of draw_doodler
-  jal draw_doodler                  #Call draw_doodler
+  la $a0, col_background            # Load the background colour to first param of draw_doodler
+  jal draw_doodler                  # Call draw_doodler
 check_keyboard_input:               # Check for keyboard inputs  
   lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
   beq $t0, 0, end_keyboard_input    # $if no keyboard input, skip handler
@@ -91,6 +95,47 @@ end_keyboard_input:
   #TEMP REMOVE
 
   #Check Collisions (Doodler, platforms)
+  la $t0, doodler_x
+  lw $t0, ($t0)
+  la $t1, doodler_y
+  lw $t1, ($t1)
+  la $t2, platforms            # $t2 stores the platforms array address
+  la $t3, platform_num
+  lw $t3 ($t3)                 # $t3 stores the number of platforms
+  sll $t3, $t3, 3              # $t3 stores the number of platforms * 8
+  add $t3, $t3, $t2            # $t3 stores the first address after the end of our platform array
+  la $t4, doodler_current_jump # $t4 stores the doodler's cur jump height address
+  lw $t5 ($t4)                 # $t5 stores the doodler's cur jump height
+  bgtz $t5, end_platform_collision_loop
+platform_collision_loop:
+  beq $t2, $t3 end_platform_collision_loop
+  lw $t6 0($t2)                # $t6 stores x pos of current platform
+  lw $t7 4($t2)                # $t7 stores y pos of current platform
+  #if doodler y,
+  sub		$t7, $t7, $t1
+  addi	$t7, $t7, -3
+  bne		$t7, $zero, platform_not_touching
+  
+  #if doodler x,
+  addi $t6, $t6, -2
+  blt		$t0, $t6, platform_not_touching
+  addi $t6, $t6, 7
+  bgt	 $t0, $t6, platform_not_touching
+  
+  #Update doodler's current jump timer
+  la $t8, doodler_jump_height
+  lw $t8 ($t8)
+  sw $t8 ($t4)
+  
+  
+
+  
+
+platform_not_touching:
+  addi $t2, $t2, 8
+  j platform_collision_loop
+end_platform_collision_loop:
+
   #Update positions of objects
   la $t0, screen_height                 # $t0 stores the doodler y pos memory location
   lw $t1 ($t0)                      # $t1 stores the doodler y pos
@@ -118,6 +163,8 @@ doodler_y_end:
   #Redraw Screen
   la $a0, col_doodler
   jal draw_doodler
+  la $a0, col_platform
+  jal draw_platforms
   #Sleep
   li $v0, 32
   li $a0, 30
@@ -185,3 +232,44 @@ draw_doodler:                  # Draws the doodler at the x,y position stored in
   sw $t1, 8($t0)              # write doodler colour to pixel
   jr $ra
  
+draw_platforms:                # Draws all the platforms stored in memory
+####################################################################################################
+  #$t0 - display base address
+  #$t1 - colour to draw
+  #$t2 - the platform array root
+  #$t3 - loop exit flag (End of array)
+  #$t4 - Screen width
+  #$t5 - x pos of platform
+  #$t6 - y pos of platform
+  lw $t0, display_address	     # $t0 stores the base address for display
+  move $t1, $a0                # $t1 stores the address storing the platform colour
+  lw $t1, ($t1)	               # $t1 stores the platform colour
+  la $t2, platforms            # $t2 stores the platforms array address
+  la $t3, platform_num
+  lw $t3 ($t3)                 # $t3 stores the number of platforms
+  sll $t3, $t3, 3              # $t3 stores the number of platforms * 8
+  add $t3, $t3, $t2            # $t3 stores the first address after the end of our platform array
+  la $t4, screen_width          
+  lw $t4 ($t4)                 # $t4 stores the screen width
+platform_loop:
+  beq $t2, $t3 end_platform_loop
+  lw $t5 0($t2)                # $t5 stores x pos of current platform
+  lw $t6 4($t2)                # $t6 stores y pos of current platform
+  mult $t6, $t4                # multiply y pos by screen width
+  mflo $t6                     # $t6 stores ^
+  add $t5, $t5, $t6            # $t5 stores total pixel offset from base display address
+  sll $t5, $t5, 2
+  add $t5, $t5, $t0            
+  
+  sw $t1, 0($t5)               # write colour to pixel
+  sw $t1, 4($t5)               # write colour to pixel
+  sw $t1, 8($t5)               #write colour to pixel
+  sw $t1, 12($t5)              # write colour to pixel
+  sw $t1, 16($t5)              # write colour to pixel
+  sw $t1, 20($t5)              # write colour to pixel
+
+  addi $t2, $t2, 8
+  j platform_loop
+
+end_platform_loop:
+  jr $ra 
