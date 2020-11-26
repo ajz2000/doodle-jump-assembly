@@ -17,14 +17,15 @@
   #This will be from top left corner of screen
   #And refer to the top left corner of the doodler
   doodler_x: .word 15                          # Doodler's position x, ie from left of screen
-  doodler_y: .word 11                          # Doodler's position y, ie from top of screen
+  doodler_y: .word 30                          # Doodler's position y, ie from top of screen
   doodler_size: .word 3                        # Doodler's height/width, keeping him square makes life much easier 
   doodler_jump_height: .word 25
-  doodler_current_jump: .word 0
+  doodler_current_jump: .word 25
 
   platform_num: .word 3
   platforms: .word 10,10,15,20,15,30     #Position of first platforms in (x,y),(x,y),.... form
   platform_width: .word 6
+  
 
 .globl main
 .text
@@ -43,8 +44,9 @@ init:                            #PROGRAM INITIALIZATION
 #CORE LOOP
 core:
   #First Screen Draw
-  la $a0, col_background            # Load the background colour to first param of draw_doodler
+  la $a0, col_background            # Load the background colour to first param of draw_doodler,draw_platforms.
   jal draw_doodler                  # Call draw_doodler
+  jal draw_platforms                # Call draw_platforms
 check_keyboard_input:               # Check for keyboard inputs  
   lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
   beq $t0, 0, end_keyboard_input    # $if no keyboard input, skip handler
@@ -71,28 +73,11 @@ doodler_screen_wrap:
 end_keyboard_input:
 
   #Check Collisions (Doodler, screen)
-  #TEMP REMOVE
-  #TEMP REMOVE
-  #TEMP REMOVE
-  #TEMP REMOVE
-  #Make doodler jump if he hits bottom of screen
   la $t0, doodler_y                 # $t0 stores the doodler y pos memory location
   lw $t0 ($t0)                      # $t0 stores the doodler y pos
   la $t1, screen_height             # $t1 stores the screen height memory location
   lw $t1 ($t1)                      # $t1 stores the screen height
-  blt $t0, $t1, doodler_trigger_jump_end
-  doodler_trigger_jump:
-  la $t2, doodler_jump_height       # $t2 stores the doodler's max jump height address
-  lw $t2 ($t2)                      # $t2 stores the doodler's max jump height
-  la $t3, doodler_current_jump      # $t3 stores the doodler's cur jump height address
-  lw $t4 ($t3)                      # $t4 stores the doodler's cur jump height
-  move $t4, $t2
-  sw $t4, ($t3)
-  doodler_trigger_jump_end:
-  #TEMP REMOVE
-  #TEMP REMOVE
-  #TEMP REMOVE
-  #TEMP REMOVE
+  bgt $t0, $t1, gameover
 
   #Check Collisions (Doodler, platforms)
   la $t0, doodler_x
@@ -160,6 +145,44 @@ doodler_y_end:
   addi $t4, $t4, -1
   sw $t4, ($t3)
 
+  #Scroll Screen
+  la $t0, screen_height
+  lw $t0, ($t0)
+  move $t5, $t0                # $t5 gets unaltered screenheight, for use later
+  sra $t0, $t0, 2              # $t0 stores screen height divided by 4
+  la $t1, doodler_y
+  lw $t1, ($t1)
+  bgt	$t1, $t0, scroll_screen_end	
+  la $t2, platforms            # $t2 stores the platforms array address
+  la $t3, platform_num
+  lw $t3 ($t3)                 # $t3 stores the number of platforms
+  sll $t3, $t3, 3              # $t3 stores the number of platforms * 8
+  add $t3, $t3, $t2            # $t3 stores the first address after the end of our platform array
+  la $t4, doodler_y
+  addi $t1, $t1, 1
+  sw $t1 ($t4)
+  #scroll the platforms
+scroll_screen_start:
+  beq $t2, $t3 scroll_screen_end
+  lw $t4 4($t2)                # $t4 stores y pos of current platform
+  addi $t4, $t4, 1
+  sw $t4 4($t2)
+  
+
+  blt	$t4, $t5, new_platform_end	# if $t0 < $t1 then target
+new_platform_start:
+  sw $zero 4($t2)
+  li $v0, 42
+  li $a0, 0
+  li $a1, 25
+  syscall
+  sw $a0 0($t2)
+
+new_platform_end:
+  addi $t2, $t2, 8
+  j scroll_screen_start
+scroll_screen_end:
+
   #Redraw Screen
   la $a0, col_doodler
   jal draw_doodler
@@ -173,6 +196,8 @@ doodler_y_end:
   j core
 #TERMINATION
 gameover:
+jal draw_background            # Draw the full background once
+jal draw_gameover
 exit:
   li $v0, 10            # prepare syscall to terminate the program
 	syscall               # Syscall to terminate the program
@@ -273,3 +298,80 @@ platform_loop:
 
 end_platform_loop:
   jr $ra 
+
+draw_gameover:                 # Draw the gameover text
+####################################################################################################
+  lw $t0, display_address	     # $t0 stores the base address for display
+  la $t1, col_doodler          # $t1 stores the address storing the background colour
+  lw $t1, ($t1)	               # $t1 stores the text colour
+  li $t2, 128
+  addi $t0, $t0, 1440
+  #B
+  sw $t1, 0($t0)
+  #Y
+  sw $t1, 16($t0)
+  sw $t1, 24($t0)
+  #E
+  sw $t1, 32($t0)
+  sw $t1, 36($t0)
+  sw $t1, 40($t0)
+
+  #!
+  sw $t1, 48($t0)
+
+  add $t0, $t0, $t2
+
+  #B
+  sw $t1, 0($t0)
+  #Y
+  sw $t1, 16($t0)
+  sw $t1, 20($t0)
+  sw $t1, 24($t0)
+  #E
+  sw $t1, 32($t0)
+  sw $t1, 40($t0)
+  #!
+  sw $t1, 48($t0)
+  add $t0, $t0, $t2
+
+  #B
+  sw $t1, 0($t0)
+  sw $t1, 4($t0)
+  sw $t1, 8($t0)
+  #Y
+  sw $t1, 24($t0)
+  #E
+  sw $t1, 32($t0)
+  sw $t1, 36($t0)
+  sw $t1, 40($t0)
+  #!
+  sw $t1, 48($t0)
+  add $t0, $t0, $t2
+
+  #B
+  sw $t1, 0($t0)
+  sw $t1, 8($t0)
+  #Y
+  sw $t1, 24($t0)
+  #E
+  sw $t1, 32($t0)
+
+  add $t0, $t0, $t2
+
+  #B
+  sw $t1, 0($t0)
+  sw $t1, 4($t0)
+  sw $t1, 8($t0)
+  #Y
+  sw $t1, 16($t0)
+  sw $t1, 20($t0)
+  sw $t1, 24($t0)
+  #E
+  sw $t1, 32($t0)
+  sw $t1, 36($t0)
+  sw $t1, 40($t0)
+  #!
+  sw $t1, 48($t0)
+
+gameover_end:  
+  jr $ra                       # Exit Function
