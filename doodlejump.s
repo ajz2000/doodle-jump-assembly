@@ -10,6 +10,7 @@
   col_doodler:  .word 0xEBD234                 # The colour of the doodler
   col_platform: .word 0x3feb36                 # The colour of the platforms
   col_background: .word 0x9df2eb               # The colour of the background
+  col_red: .word 0xFF0000
   screen_height:  .word 32                     # Height of the screen in pixels
   screen_width:   .word 32                     # Width of the screen in pixels
   screen_total_pixels: .word 0                 # Total number of pixels on screen, calculated at initialization
@@ -24,10 +25,13 @@
   #doodler_current_jump acts like a counter. When a jump starts, it is set to 25, and decrements each frame 
   #each frame, we check if its value is >0, if it is, move the doodler up, if it isn't, move the doodler down
 
-  platform_num: .word 3                        # Number of platforms
-  platforms: .word 10,10,15,20,15,30           # Position of platforms in (x,y),(x,y),.... form
+  platform_num: .word 5                        # Number of platforms
+  platforms: .word 2,4,10,10,15,20,20,2,25,30           # Position of platforms in (x,y),(x,y),.... form
   platform_width: .word 6                 
   
+  screen_refresh: 30
+  difficulty_counter: 0
+
   #Stores the offsets of pixels (multiplied by 4, due to word size) in the "bye!" gameover text
   #-1 is a flag used to signal the rendering function should move to the next line
   #-2 is a flag used to signal the end of the data (basically a null terminator)
@@ -165,6 +169,10 @@ doodler_y_end:
   la $t4, doodler_y            # $t4 stores the address of the doodler's y position (Because I wasn't thinking ahead I overwrote the register that had it earlier)
   addi $t1, $t1, 1             # $t1 gets doodlers current height + 1 (Moves him down, ie scrolling screen)
   sw $t1 ($t4)                 # $update doodler's new height
+  la $t7 difficulty_counter
+  lw $t8 ($t7)                
+  addi $t8, $t8, 1
+  sw $t8, ($t7)                # Update difficulty counter
   #scroll the platforms
 scroll_screen_start:
   beq $t2, $t3 scroll_screen_end
@@ -184,6 +192,31 @@ new_platform_end:
   j scroll_screen_start
 scroll_screen_end:
 
+#update difficulty
+  la $t0, difficulty_counter
+  lw $t1, ($t0)
+  li $t2, 250
+  bne		$t1, $t2, increase_difficulty_end	# if $t0 != $t1 then increase_difficulty_end
+  increase_difficulty:
+  sw $zero ($t0)                          # Reset difficulty counter
+  la $t0, platform_num
+  lw $t1 ($t0)
+  li $t2, 3
+  beq $t1, $t2, decrease_platforms_end
+  decrease_platforms:                     # Remove a platform if we have more than 3 platforms
+  addi $t1, $t1, -1
+  sw $t1, ($t0)
+  decrease_platforms_end:
+  la $t0, screen_refresh
+  lw $t1 ($t0)
+  li $t2, 15
+  beq $t1, $t2, increase_speed_end
+  increase_speed:
+  addi $t1, $t1, -1
+  sw $t1 ($t0)
+  increase_speed_end:
+  increase_difficulty_end:
+
   #Redraw Screen
   la $a0, col_doodler
   jal draw_doodler
@@ -191,7 +224,8 @@ scroll_screen_end:
   jal draw_platforms
   #Sleep
   li $v0, 32
-  li $a0, 30
+  la $t0, screen_refresh
+  lw $a0, ($t0)
   syscall
 
   j core
