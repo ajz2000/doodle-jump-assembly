@@ -11,6 +11,7 @@
   col_platform: .word 0x3feb36                 # The colour of the platforms
   col_background: .word 0x9df2eb               # The colour of the background
   col_red: .word 0xFF0000
+  col_blue: .word 0x0000FF
   screen_height:  .word 32                     # Height of the screen in pixels
   screen_width:   .word 32                     # Width of the screen in pixels
   screen_total_pixels: .word 0                 # Total number of pixels on screen, calculated at initialization
@@ -24,6 +25,7 @@
   doodler_current_jump: .word 25               # Used for keeping track of the portion of his jump the doodler has completed
   #doodler_current_jump acts like a counter. When a jump starts, it is set to 25, and decrements each frame 
   #each frame, we check if its value is >0, if it is, move the doodler up, if it isn't, move the doodler down
+  doodler_has_shield: .word 0
 
   platform_num: .word 5                        # Number of platforms
   platforms: .word 2,4,10,10,15,20,20,2,25,30           # Position of platforms in (x,y),(x,y),.... form
@@ -35,6 +37,10 @@
   enemy_x: .word 18
   enemy_y: .word 32
   enemy_size: .word 2
+
+  shield_x: .word 2
+  shield_y: .word 32
+  shield_size: .word 2
 
   #Stores the offsets of pixels (multiplied by 4, due to word size) in the "bye!" gameover text
   #-1 is a flag used to signal the rendering function should move to the next line
@@ -65,6 +71,7 @@ core:                               #CORE LOOP
   jal draw_doodler                  # Call draw_doodler
   jal draw_platforms                # Call draw_platforms
   jal draw_enemy
+  jal draw_shield
 
 check_keyboard_input:               # Check for keyboard inputs  
   lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
@@ -98,7 +105,7 @@ end_keyboard_input:
   lw $t1 ($t1)                      # $t1 stores the screen height
   bgt $t0, $t1, gameover            # If doodler's y exceeds screen-height, gameover
 
-  #Check collisions (Doodler, platforms)
+  #Check collisions (Doodler, enemy)
   la $t2, enemy_y
   lw $t2 ($t2)
   li $t3, 32
@@ -120,8 +127,46 @@ end_keyboard_input:
   addi $t3, $t3, 2
   bgt $t0, $t2, skip_check_enemy_collision
   bge $t1, $t3, skip_check_enemy_collision
+  la $t0, doodler_has_shield
+  lw $t1, ($t0)
+  bgtz $t1, remove_shield
   j gameover
+  remove_shield:
+  sw $zero, ($t0)
+  la $t0, enemy_y
+  li $t1, 32
+  sw $t1 ($t0)
   skip_check_enemy_collision:
+
+  #Check collisions (Doodler, shield)
+  la $t2, shield_y
+  lw $t2 ($t2)
+  li $t3, 32
+  bgt		$t2, $t3, skip_check_shield_collision	# if $t2 > 32 then skip check
+  check_shieldenemy_collision:
+  la, $t1, doodler_x
+  lw $t1, ($t1)
+  la $t3, shield_x
+  lw $t3, ($t3)
+  #$t0: doodler y, $t1, doodler x, $t2, shield y, $t3 shield x
+  #Check if doodler above, or to the left
+  addi $t0, $t0, 3
+  addi $t1, $t1, 3
+  ble	$t0, $t2, skip_check_shield_collision
+  ble $t1, $t3, skip_check_shield_collision
+  addi $t0, $t0, -3
+  addi $t1, $t1, -3
+  addi $t2, $t2, 2
+  addi $t3, $t3, 2
+  bgt $t0, $t2, skip_check_shield_collision
+  bge $t1, $t3, skip_check_shield_collision
+  la $t0 doodler_has_shield
+  li $t1, 1
+  sw $t1 ($t0)
+  la $t0, shield_y
+  li $t1, 32
+  sw $t1 ($t0)
+  skip_check_shield_collision:
 
   #Check Collisions (Doodler, platforms)
   la $t0, doodler_x            
@@ -208,11 +253,22 @@ doodler_y_end:
   la $t8, enemy_y
   lw $t9 ($t8)
   li $s0, 32
-  bgt		$t9, $s0, scroll_enemy_end	# if $t0 > $t1 then target
+  bgt		$t9, $s0, scroll_enemy_end
 scroll_enemy_start:
   addi $t9, $t9, 1
   sw $t9, ($t8)
 scroll_enemy_end:
+
+  #Scroll the shield
+  la $t8, shield_y
+  lw $t9 ($t8)
+  li $s0, 32
+  bgt		$t9, $s0, scroll_shield_end
+scroll_shield_start:
+  addi $t9, $t9, 1
+  sw $t9, ($t8)
+scroll_shield_end:
+
   #scroll the platforms
 scroll_screen_start:
   beq $t2, $t3 scroll_screen_end
@@ -266,13 +322,42 @@ scroll_screen_end:
   increase_speed_end:
   increase_difficulty_end:
 
+  #spawn shield
+  la $t0, difficulty_counter
+  lw $t1, ($t0)
+  li $t2, 125
+  bne		$t1, $t2, spawn_shield_end
+  spawn_shield:
+  addi $t1, $t1, 1
+  sw $t1, ($t0) 
+  la $t3, shield_y                         # Put a shield at the top of the screen
+  sw $zero, ($t3)
+  la $t5, shield_x
+  li $v0, 42
+  li $a0, 0
+  li $a1, 30
+  syscall
+  sw $a0 0($t5)
+  spawn_shield_end:
+
   #Redraw Screen
-  la $a0, col_doodler
+  la $t0 doodler_has_shield
+  lw $t0 ($t0)
+  bgtz $t0, doodler_col_shield
+doodler_col_no_shield:
+ la $a0, col_doodler
+ j doodler_col_end
+doodler_col_shield:
+  la $a0, col_blue
+doodler_col_end: 
+ 
   jal draw_doodler
   la $a0, col_platform
   jal draw_platforms
   la $a0, col_red
   jal draw_enemy
+  la $a0, col_blue
+  jal draw_shield
   #Sleep
   li $v0, 32
   la $t0, screen_refresh
@@ -284,6 +369,20 @@ scroll_screen_end:
 gameover:
 jal draw_background            # Draw the full background once
 jal draw_gameover              # Draw the gameover screen/text
+wait_restart:
+  li $v0, 32
+  la $t0, screen_refresh
+  lw $a0, ($t0)
+  syscall
+  lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
+  beq $t0, 0, wait_restart          # $if no keyboard input, skip handler
+  lw $t0, 0xffff0004                # $t0 gets ascii value of entered key
+  beq $t0, 0x73, do_restart         # if keyboard input s, restart
+  j wait_restart
+do_restart:
+  jal reset_values
+  j init
+
 exit:
   li $v0, 10            # prepare syscall to terminate the program
 	syscall               # Syscall to terminate the program
@@ -428,13 +527,72 @@ draw_enemy:                   # Draws the enemy at the x,y position stored in me
   add $t5, $t5, $t2            # $t5 stores the pixel offset from origin of enemy
   sll $t5, $t5, 2              # $t5 stores the equivalent offset in memory ie pixel offset * 4
   add $t0, $t0, $t5
-  sw $t1, 0($t0)               # write doodler colour to pixel
-  sw $t1, 4($t0)               # write doodler colour to pixel
+  sw $t1, 0($t0)               # write enemy colour to pixel
+  sw $t1, 4($t0)               # write enemy colour to pixel
 
   move 	$t5, $t4		           # $t5 = t4
   sll $t5, $t5, 2
   add $t0, $t0, $t5            # $t5
-  sw $t1, 0($t0)               # write doodler colour to pixel
-  sw $t1, 4($t0)               # write doodler colour to pixel
+  sw $t1, 0($t0)               # write enemy colour to pixel
+  sw $t1, 4($t0)               # write enemy colour to pixel
+
+  jr $ra
+
+reset_values:
+####################################################################################################
+  la $t0, doodler_x
+  li $t1, 15
+  sw $t1, ($t0)
+  la $t0, doodler_y
+  li $t1, 30
+  sw $t1, ($t0)
+  la $t0, doodler_current_jump
+  li $t1, 25
+  sw $t1, ($t0)
+  la $t0, platform_num
+  li $t1, 5
+  sw $t1, ($t0)
+  la $t0, screen_refresh
+  li $t1, 30
+  sw $t1, ($t0)
+  la $t0, difficulty_counter
+  li $t1, 0
+  sw $t1, ($t0)
+  la $t0, enemy_x
+  li $t1, 18
+  sw $t1, ($t0)
+  la $t0, enemy_y
+  li $t1, 32
+  sw $t1, ($t0)
+  la $t0, doodler_has_shield
+  sw $zero, ($t0)
+  jr $ra
+
+draw_shield:                   # Draws the shield at the x,y position stored in memory
+####################################################################################################
+  lw $t0, display_address	     # $t0 stores the base address for display
+  move $t1, $a0                # $t1 stores the address storing the enemy colour
+  lw $t1, ($t1)	               # $t1 stores the enemy colour
+  la $t2, shield_x           
+  lw $t2 ($t2)                 # $t2 stores the enemy x pos
+  la $t3, shield_y           
+  lw $t3, ($t3)                # $t3 stores the enemy y pos
+  la $t4, screen_width         # $t4 stores the address storing the screen width
+  lw $t4, ($t4)	               # $t4 stores the screen width
+
+  #Draw shield
+  mult $t3, $t4
+  mflo $t5
+  add $t5, $t5, $t2            # $t5 stores the pixel offset from origin of enemy
+  sll $t5, $t5, 2              # $t5 stores the equivalent offset in memory ie pixel offset * 4
+  add $t0, $t0, $t5
+  sw $t1, 0($t0)               # write shield colour to pixel
+  sw $t1, 4($t0)               # write shield colour to pixel
+
+  move 	$t5, $t4		           # $t5 = t4
+  sll $t5, $t5, 2
+  add $t0, $t0, $t5            # $t5
+  sw $t1, 0($t0)               # write shield colour to pixel
+  sw $t1, 4($t0)               # write shield colour to pixel
 
   jr $ra
