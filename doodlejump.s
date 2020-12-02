@@ -32,6 +32,10 @@
   screen_refresh: 30
   difficulty_counter: 0
 
+  enemy_x: .word 18
+  enemy_y: .word 32
+  enemy_size: .word 2
+
   #Stores the offsets of pixels (multiplied by 4, due to word size) in the "bye!" gameover text
   #-1 is a flag used to signal the rendering function should move to the next line
   #-2 is a flag used to signal the end of the data (basically a null terminator)
@@ -60,6 +64,7 @@ core:                               #CORE LOOP
   la $a0, col_background            # Load the background colour to first param of draw_doodler,draw_platforms.
   jal draw_doodler                  # Call draw_doodler
   jal draw_platforms                # Call draw_platforms
+  jal draw_enemy
 
 check_keyboard_input:               # Check for keyboard inputs  
   lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
@@ -92,6 +97,31 @@ end_keyboard_input:
   la $t1, screen_height             # $t1 stores the screen height memory location
   lw $t1 ($t1)                      # $t1 stores the screen height
   bgt $t0, $t1, gameover            # If doodler's y exceeds screen-height, gameover
+
+  #Check collisions (Doodler, platforms)
+  la $t2, enemy_y
+  lw $t2 ($t2)
+  li $t3, 32
+  bgt		$t2, $t3, skip_check_enemy_collision	# if $t2 > 32 then skip check
+  check_enemy_collision:
+  la, $t1, doodler_x
+  lw $t1, ($t1)
+  la $t3, enemy_x
+  lw $t3, ($t3)
+  #$t0: doodler y, $t1, doodler x, $t2, enemy y, $t3 enemy x
+  #Check if doodler above, or to the left
+  addi $t0, $t0, 3
+  addi $t1, $t1, 3
+  ble	$t0, $t2, skip_check_enemy_collision
+  ble $t1, $t3, skip_check_enemy_collision
+  addi $t0, $t0, -3
+  addi $t1, $t1, -3
+  addi $t2, $t2, 2
+  addi $t3, $t3, 2
+  bgt $t0, $t2, skip_check_enemy_collision
+  bge $t1, $t3, skip_check_enemy_collision
+  j gameover
+  skip_check_enemy_collision:
 
   #Check Collisions (Doodler, platforms)
   la $t0, doodler_x            
@@ -173,6 +203,16 @@ doodler_y_end:
   lw $t8 ($t7)                
   addi $t8, $t8, 1
   sw $t8, ($t7)                # Update difficulty counter
+  
+  #Scroll the enemy
+  la $t8, enemy_y
+  lw $t9 ($t8)
+  li $s0, 32
+  bgt		$t9, $s0, scroll_enemy_end	# if $t0 > $t1 then target
+scroll_enemy_start:
+  addi $t9, $t9, 1
+  sw $t9, ($t8)
+scroll_enemy_end:
   #scroll the platforms
 scroll_screen_start:
   beq $t2, $t3 scroll_screen_end
@@ -199,6 +239,15 @@ scroll_screen_end:
   bne		$t1, $t2, increase_difficulty_end	# if $t0 != $t1 then increase_difficulty_end
   increase_difficulty:
   sw $zero ($t0)                          # Reset difficulty counter
+  la $t3, enemy_y                         # Put an enemy at the top of the screen
+  sw $zero, ($t3)
+  la $t5, enemy_x
+  li $v0, 42
+  li $a0, 0
+  li $a1, 30
+  syscall
+  sw $a0 0($t5)
+
   la $t0, platform_num
   lw $t1 ($t0)
   li $t2, 3
@@ -222,6 +271,8 @@ scroll_screen_end:
   jal draw_doodler
   la $a0, col_platform
   jal draw_platforms
+  la $a0, col_red
+  jal draw_enemy
   #Sleep
   li $v0, 32
   la $t0, screen_refresh
@@ -358,3 +409,32 @@ gameover_jump_row:
   j gameover_loop
 gameover_end:  
   jr $ra                       # Exit Function
+
+draw_enemy:                   # Draws the enemy at the x,y position stored in memory
+####################################################################################################
+  lw $t0, display_address	     # $t0 stores the base address for display
+  move $t1, $a0                # $t1 stores the address storing the enemy colour
+  lw $t1, ($t1)	               # $t1 stores the enemy colour
+  la $t2, enemy_x           
+  lw $t2 ($t2)                 # $t2 stores the enemy x pos
+  la $t3, enemy_y           
+  lw $t3, ($t3)                # $t3 stores the enemy y pos
+  la $t4, screen_width         # $t4 stores the address storing the screen width
+  lw $t4, ($t4)	               # $t4 stores the screen width
+
+  #Draw enemy
+  mult $t3, $t4
+  mflo $t5
+  add $t5, $t5, $t2            # $t5 stores the pixel offset from origin of enemy
+  sll $t5, $t5, 2              # $t5 stores the equivalent offset in memory ie pixel offset * 4
+  add $t0, $t0, $t5
+  sw $t1, 0($t0)               # write doodler colour to pixel
+  sw $t1, 4($t0)               # write doodler colour to pixel
+
+  move 	$t5, $t4		           # $t5 = t4
+  sll $t5, $t5, 2
+  add $t0, $t0, $t5            # $t5
+  sw $t1, 0($t0)               # write doodler colour to pixel
+  sw $t1, 4($t0)               # write doodler colour to pixel
+
+  jr $ra
