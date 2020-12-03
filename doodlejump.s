@@ -228,6 +228,14 @@ doodler_y_end:
   addi $t4, $t4, -1                 # Decrement doodler_current_jump 
   sw $t4, ($t3)                     # Store decremented doodler_current_jump
 
+  #move enemy
+  la $t0, enemy_x
+  lw $t1, ($t0)
+  addi $t1, $t1, 1 
+  li $t2, 31                        # $t2 gets 31
+  and $t1, $t1, $t2                 # mod32
+  sw $t1, ($t0)
+
   #Scroll Screen
   la $t0, screen_height
   lw $t0, ($t0)
