@@ -32,7 +32,7 @@
   platforms: .word 2,4,10,10,15,20,20,2,25,30           # Position of platforms in (x,y),(x,y),.... form
   platform_width: .word 6                 
   
-  screen_refresh: .word 30
+  screen_refresh: .word 20
   difficulty_counter: .word 0
   score: .word 0
 
@@ -58,6 +58,9 @@
                  1,1,1,-1,0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1-1, #7
                  1,1,1,-1,1,0,1,-1,1,1,1,-1,1,0,1,-1,1,1,1-1, #8
                  1,1,1,-1,1,0,1,-1,1,1,1,-1,0,0,1,-1,0,0,1-1, #9
+
+buffer: .space 8192 #extra big buffer, just to be safe!
+
 .globl main
 .text
 main: 
@@ -337,10 +340,10 @@ scroll_screen_end:
   decrease_platforms_end:
   la $t0, screen_refresh
   lw $t1 ($t0)
-  li $t2, 15
+  li $t2, 4
   beq $t1, $t2, increase_speed_end
   increase_speed:
-  addi $t1, $t1, -1
+  addi $t1, $t1, -4
   sw $t1 ($t0)
   increase_speed_end:
   increase_difficulty_end:
@@ -383,6 +386,8 @@ doodler_col_end:
   jal draw_shield
   jal draw_score
 
+  jal load_buffer
+  
   #Sleep
   li $v0, 32
   la $t0, screen_refresh
@@ -393,6 +398,7 @@ doodler_col_end:
 #TERMINATION
 gameover:
 jal draw_background            # Draw the full background once
+jal load_buffer
 jal draw_gameover              # Draw the gameover screen/text
 wait_restart:
   li $v0, 32
@@ -416,7 +422,8 @@ exit:
 
 draw_background:               # Draws the filled out-colour background of the screen
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   la $t1, col_background       # $t1 stores the address storing the background colour
   lw $t1, ($t1)	               # $t1 stores the background colour
   la $t2, screen_total_pixels  # $t2 stores the address storing the total number of pixels onscreen
@@ -436,7 +443,8 @@ end:
  
 draw_doodler:                  # Draws the doodler at the x,y position stored in memory
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   move $t1, $a0          # $t1 stores the address storing the doodler colour
   lw $t1, ($t1)	               # $t1 stores the doodler colour
   la $t2, doodler_x           
@@ -476,7 +484,8 @@ draw_platforms:                # Draws all the platforms stored in memory
   #$t4 - Screen width
   #$t5 - x pos of platform
   #$t6 - y pos of platform
-  lw $t0, display_address	     # $t0 stores the base address for display
+  # lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   move $t1, $a0                # $t1 stores the address storing the platform colour
   lw $t1, ($t1)	               # $t1 stores the platform colour
   la $t2, platforms            # $t2 stores the platforms array address
@@ -536,7 +545,8 @@ gameover_end:
 
 draw_enemy:                   # Draws the enemy at the x,y position stored in memory
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   move $t1, $a0                # $t1 stores the address storing the enemy colour
   lw $t1, ($t1)	               # $t1 stores the enemy colour
   la $t2, enemy_x           
@@ -578,7 +588,7 @@ reset_values:
   li $t1, 5
   sw $t1, ($t0)
   la $t0, screen_refresh
-  li $t1, 30
+  li $t1, 20
   sw $t1, ($t0)
   la $t0, difficulty_counter
   li $t1, 0
@@ -600,7 +610,8 @@ reset_values:
 
 draw_shield:                   # Draws the shield at the x,y position stored in memory
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   move $t1, $a0                # $t1 stores the address storing the shield colour
   lw $t1, ($t1)	               # $t1 stores the shield colour
   la $t2, shield_x           
@@ -634,7 +645,8 @@ draw_shield:                   # Draws the shield at the x,y position stored in 
                                  # $a2 the x position
                                  # $a3 the y position
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   lw $a0, ($a0)
   li $t1, 4                       
   mult $t1, $a2                          #TODO do with hshifting for efficiency
@@ -735,7 +747,8 @@ draw_score:
 
   erase_score:               # Draws the filled out-colour background of the screen
 ####################################################################################################
-  lw $t0, display_address	     # $t0 stores the base address for display
+  #lw $t0, display_address	     # $t0 stores the base address for display
+  la $t0, buffer
   la $t1, col_background      # $t1 stores the address storing the background colour
   lw $t1, ($t1)	               # $t1 stores the background colour
   #la $t2, screen_total_pixels  # $t2 stores the address storing the total number of pixels onscreen
@@ -752,3 +765,17 @@ erase_score_while:
 erase_score_end:  
   jr $ra                       # Exit Function
   
+  load_buffer:
+  lw $t0, display_address
+  la $t1, buffer
+  li $t2, 4096
+  add $t2, $t0, $t2
+  buffer_loop_start:
+  beq $t0, $t2, buffer_loop_end
+  lw $t3 ($t1)
+  sw $t3 ($t0)
+  addi $t0, $t0, 4
+  addi $t1, $t1, 4
+  j buffer_loop_start
+  buffer_loop_end:
+  jr $ra
