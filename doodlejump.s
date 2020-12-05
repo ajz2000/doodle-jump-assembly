@@ -12,6 +12,7 @@
   col_background: .word 0x9df2eb               # The colour of the background
   col_red: .word 0xFF0000
   col_blue: .word 0x0000FF
+  col_white: .word 0xFFFFFF
   screen_height:  .word 32                     # Height of the screen in pixels
   screen_width:   .word 32                     # Width of the screen in pixels
   screen_total_pixels: .word 0                 # Total number of pixels on screen, calculated at initialization
@@ -31,8 +32,9 @@
   platforms: .word 2,4,10,10,15,20,20,2,25,30           # Position of platforms in (x,y),(x,y),.... form
   platform_width: .word 6                 
   
-  screen_refresh: 30
-  difficulty_counter: 0
+  screen_refresh: .word 30
+  difficulty_counter: .word 0
+  score: .word 0
 
   enemy_x: .word 18
   enemy_y: .word 32
@@ -45,8 +47,17 @@
   #Stores the offsets of pixels (multiplied by 4, due to word size) in the "bye!" gameover text
   #-1 is a flag used to signal the rendering function should move to the next line
   #-2 is a flag used to signal the end of the data (basically a null terminator)
-  bye_text: .word 0, 16, 24, 32,36,40,48,-1,0,16,20,24,32,40,48,-1,0,4,8,24,32,36,40,48,-1,0,8,24,32,-1,0,4,8,16,20,24,32,36,40,48,-2
-
+  bye_text: .word 0, 16, 24, 32,36,40,48,-1,0,16,20,24,32,40,48,-1,0,4,8,24,32,36,40,48,-1,0,8,24,32,-1,0,4,8,16,20,24,32,36,40,48,-2                                    
+  numbers: .word 1,1,1,-1,1,0,1,-1,1,0,1,-1,1,0,1,-1,1,1,1-1, #0
+                 0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1-1, #1
+                 1,1,1,-1,0,0,1,-1,1,1,1,-1,1,0,0,-1,1,1,1-1, #2
+                 1,1,1,-1,0,0,1,-1,1,1,1,-1,0,0,1,-1,1,1,1-1, #3
+                 1,0,1,-1,1,0,1,-1,1,1,1,-1,0,0,1,-1,0,0,1-1, #4
+                 1,1,1,-1,1,0,0,-1,1,1,1,-1,0,0,1,-1,1,1,1-1, #5
+                 1,1,1,-1,1,0,0,-1,1,1,1,-1,1,0,1,-1,1,1,1-1, #6
+                 1,1,1,-1,0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1-1, #7
+                 1,1,1,-1,1,0,1,-1,1,1,1,-1,1,0,1,-1,1,1,1-1, #8
+                 1,1,1,-1,1,0,1,-1,1,1,1,-1,0,0,1,-1,0,0,1-1, #9
 .globl main
 .text
 main: 
@@ -72,6 +83,7 @@ core:                               #CORE LOOP
   jal draw_platforms                # Call draw_platforms
   jal draw_enemy
   jal draw_shield
+  jal erase_score
 
 check_keyboard_input:               # Check for keyboard inputs  
   lw $t0, 0xffff0000                # $t0 gets the value indicating keyboard input
@@ -256,7 +268,10 @@ doodler_y_end:
   lw $t8 ($t7)                
   addi $t8, $t8, 1
   sw $t8, ($t7)                # Update difficulty counter
-  
+  la $t7 score                 # Update the score
+  lw $t8 ($t7)                
+  addi $t8, $t8, 1
+  sw $t8, ($t7)
   #Scroll the enemy
   la $t8, enemy_y
   lw $t9 ($t8)
@@ -366,6 +381,8 @@ doodler_col_end:
   jal draw_enemy
   la $a0, col_blue
   jal draw_shield
+  jal draw_score
+
   #Sleep
   li $v0, 32
   la $t0, screen_refresh
@@ -574,24 +591,29 @@ reset_values:
   sw $t1, ($t0)
   la $t0, doodler_has_shield
   sw $zero, ($t0)
+  la $t0, shield_y
+  li $t1, 32
+  sw $t1, ($t0)
+  la $t0, score
+  sw $zero ($t0)
   jr $ra
 
 draw_shield:                   # Draws the shield at the x,y position stored in memory
 ####################################################################################################
   lw $t0, display_address	     # $t0 stores the base address for display
-  move $t1, $a0                # $t1 stores the address storing the enemy colour
-  lw $t1, ($t1)	               # $t1 stores the enemy colour
+  move $t1, $a0                # $t1 stores the address storing the shield colour
+  lw $t1, ($t1)	               # $t1 stores the shield colour
   la $t2, shield_x           
-  lw $t2 ($t2)                 # $t2 stores the enemy x pos
+  lw $t2 ($t2)                 # $t2 stores the shield x pos
   la $t3, shield_y           
-  lw $t3, ($t3)                # $t3 stores the enemy y pos
+  lw $t3, ($t3)                # $t3 stores the shield y pos
   la $t4, screen_width         # $t4 stores the address storing the screen width
   lw $t4, ($t4)	               # $t4 stores the screen width
 
   #Draw shield
   mult $t3, $t4
   mflo $t5
-  add $t5, $t5, $t2            # $t5 stores the pixel offset from origin of enemy
+  add $t5, $t5, $t2            # $t5 stores the pixel offset from origin of shield
   sll $t5, $t5, 2              # $t5 stores the equivalent offset in memory ie pixel offset * 4
   add $t0, $t0, $t5
   sw $t1, 0($t0)               # write shield colour to pixel
@@ -604,3 +626,129 @@ draw_shield:                   # Draws the shield at the x,y position stored in 
   sw $t1, 4($t0)               # write shield colour to pixel
 
   jr $ra
+
+
+  draw_number:                   # Draws the number at the passed position stored in memory
+                                 # $a0 the color to draw the number
+                                 # $a1 the number to draw
+                                 # $a2 the x position
+                                 # $a3 the y position
+####################################################################################################
+  lw $t0, display_address	     # $t0 stores the base address for display
+  lw $a0, ($a0)
+  li $t1, 4                       
+  mult $t1, $a2                          #TODO do with hshifting for efficiency
+  mflo $t1
+  add $t0, $t0, $t1
+  li $t1, 128
+  mult $t1, $a3
+  mflo $t1
+  add $t0, $t0, $t1  
+ # la $t1, col_white            # $t1 stores the address storing the number colour
+ # lw $t1 ($t1)                 # $t1 stores the number colour
+  la $t2, numbers              # $t2 stores the address of the mnumber array
+  li $t3, 80                   # Why 60? word size = 4, 15 pixels in a number + line jump indicator -1s, we get 20*4=80
+  mult $a1, $t3
+  mflo $t3
+  add $t2, $t2, $t3            # increment t2 to the start of the data represnting the number in $a0
+  li $t5, 80
+  add $t5, $t2, $t5 
+draw_number_loop_start:
+  beq $t2, $t5, draw_number_loop_end
+  lw $t6 ($t2)
+  bgtz $t6, draw_number_one
+  bltz $t6, draw_number_negative_one
+  draw_number_zero:
+  addi $t0, $t0, 4
+  addi $t2, $t2, 4
+  j draw_number_loop_start
+draw_number_one:
+  sw $a0, ($t0)
+  addi $t0, $t0, 4
+  addi $t2, $t2, 4
+  j draw_number_loop_start
+draw_number_negative_one:
+  addi $t0, $t0, 116
+  addi $t2, $t2, 4
+j draw_number_loop_start
+
+draw_number_loop_end: 
+jr $ra
+
+
+draw_score:
+####################################################################################################
+  move $s7 $ra
+
+  la $s0 score
+  lw $s0 ($s0)
+
+  
+  
+  li $s1, 10
+  div $s0, $s1
+  mfhi $a1
+  
+  li $a2, 16
+  li $a3, 1
+  la $a0, col_white
+  jal draw_number
+
+  li $s1, 10
+  div $s0, $s1
+  mflo $a1
+  li $s1, 10
+  div $a1, $s1
+  mfhi $a1
+  #li $v0, 1
+  #move $a0, $a1
+  #syscall
+  li $a2, 11
+  li $a3, 1
+  la $a0, col_white
+  jal draw_number
+
+  li $s1, 100
+  div $s0, $s1
+  mflo $a1
+  li $s1, 10
+  div $a1, $s1
+  mfhi $a1
+  li $a2, 6
+  li $a3, 1
+  la $a0, col_white
+  jal draw_number
+
+  li $s1, 1000
+  div $s0, $s1
+  mflo $a1
+  li $s1, 10
+  div $a1, $s1
+  mfhi $a1
+  li $a2, 1
+  li $a3, 1
+  la $a0, col_white
+  jal draw_number
+
+  jr $s7
+
+
+  erase_score:               # Draws the filled out-colour background of the screen
+####################################################################################################
+  lw $t0, display_address	     # $t0 stores the base address for display
+  la $t1, col_background      # $t1 stores the address storing the background colour
+  lw $t1, ($t1)	               # $t1 stores the background colour
+  #la $t2, screen_total_pixels  # $t2 stores the address storing the total number of pixels onscreen
+  #lw $t2, ($t2)	               # $t2 stores the total number of pixels onscreen
+  li $t2, 192
+  sll $t2, $t2, 2              # $t2 stores # pixels * 4
+erase_score_loopinit:
+  add $t2, $t0, $t2            # $t2 stores the memory adress we see when we want to stop the loop
+erase_score_while:
+  beq	$t0, $t2, erase_score_end	           # if $t0 == $t2 then jump to end 
+  sw $t1, 0($t0)               # write background colour to pixel
+  addi $t0, $t0 4              # $t0 increments by 4, ie move to next pixel
+  j erase_score_while
+erase_score_end:  
+  jr $ra                       # Exit Function
+  
