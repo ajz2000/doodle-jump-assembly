@@ -1,18 +1,45 @@
-.data
+#####################################################################
+#
+# CSCB58 Fall 2020 Assembly Final Project
+# University of Toronto, Scarborough
+#
+# Student: Aidan Zorbas, 1005386075
+#
 # Bitmap Display Configuration:
 # - Unit width in pixels: 8					     
 # - Unit height in pixels: 8
 # - Display width in pixels: 256
 # - Display height in pixels: 256
 # - Base Address for Display: 0x10008000 ($gp)
+#
+# Which milestone is reached in this submission?
+# (See the assignment handout for descriptions of the milestones)
+# - Milestone 5 (But only 2 milestone 5 features, not 3)
+#
+# Which approved additional features have been implemented?
+# (See the assignment handout for the list of additional features)
+# 1.  Opponents / Lethal Creatures
+# 2.  Shields (for protection of doodler)
+#
+# Link to video demonstration for final submission:
+# - (insert YouTube / MyMedia / other URL here). 
+#
+# Any additional information that the TA needs to know:
+# - No additional info, have a nice day!
+#
+#####################################################################
+
+
+.data
+
 # - Functional screen size: 32x32
 	display_address:	.word	0x10008000           # The base address for the display
   col_doodler:  .word 0xEBD234                 # The colour of the doodler
   col_platform: .word 0x3feb36                 # The colour of the platforms
   col_background: .word 0x9df2eb               # The colour of the background
-  col_red: .word 0xFF0000
-  col_blue: .word 0x0000FF
-  col_white: .word 0xFFFFFF
+  col_red: .word 0xFF0000                      # The colour red (This ended up unused)
+  col_blue: .word 0x0000FF                     # The colour blue
+  col_white: .word 0xFFFFFF                    # The colour white
   screen_height:  .word 32                     # Height of the screen in pixels
   screen_width:   .word 32                     # Width of the screen in pixels
   screen_total_pixels: .word 0                 # Total number of pixels on screen, calculated at initialization
@@ -22,24 +49,32 @@
   doodler_x: .word 15                          # Doodler's position x, ie from left of screen
   doodler_y: .word 30                          # Doodler's position y, ie from top of screen
   doodler_size: .word 3                        # Doodler's height/width, keeping him square makes life much easier 
-  doodler_jump_height: .word 25                # Height of the Doodler's jump
-  doodler_current_jump: .word 25               # Used for keeping track of the portion of his jump the doodler has completed
   #doodler_current_jump acts like a counter. When a jump starts, it is set to 25, and decrements each frame 
   #each frame, we check if its value is >0, if it is, move the doodler up, if it isn't, move the doodler down
+  doodler_jump_height: .word 25                # Height of the Doodler's jump
+  doodler_current_jump: .word 25               # Used for keeping track of the portion of his jump the doodler has completed
+  #if the doodler has a shield, 1, else 0
   doodler_has_shield: .word 0
 
-  platform_num: .word 5                        # Number of platforms
-  platforms: .word 2,4,10,10,15,20,20,2,25,30           # Position of platforms in (x,y),(x,y),.... form
+ # Number of platforms
+  platform_num: .word 5                       
+  # Position of platforms in (x,y),(x,y),.... form
+  platforms: .word 2,4,10,10,15,20,20,2,25,30           
   platform_width: .word 6                 
   
+  #Length of sleep time in ms
   screen_refresh: .word 20
+  #Current difficulty, counts up to specified limit, and then decreases back to zero, indicating we have gone up a difficulty level
   difficulty_counter: .word 0
+  #player's score
   score: .word 0
 
+  #enemy data, no need for array as I don't ever put multiple enemies on screen (Would get far too hectic)
   enemy_x: .word 18
   enemy_y: .word 32
   enemy_size: .word 2
 
+  #Shield data
   shield_x: .word 2
   shield_y: .word 32
   shield_size: .word 2
@@ -48,6 +83,10 @@
   #-1 is a flag used to signal the rendering function should move to the next line
   #-2 is a flag used to signal the end of the data (basically a null terminator)
   bye_text: .word 0, 16, 24, 32,36,40,48,-1,0,16,20,24,32,40,48,-1,0,4,8,24,32,36,40,48,-1,0,8,24,32,-1,0,4,8,16,20,24,32,36,40,48,-2                                    
+  #Stores an array containing the data of visible/invisible pixels representing a 3x5 font with the numbers 0-9
+  #1: visible pixel
+  #0: invisible pixel
+  #-1: end of row
   numbers: .word 1,1,1,-1,1,0,1,-1,1,0,1,-1,1,0,1,-1,1,1,1-1, #0
                  0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1,-1,0,0,1-1, #1
                  1,1,1,-1,0,0,1,-1,1,1,1,-1,1,0,0,-1,1,1,1-1, #2
@@ -59,7 +98,8 @@
                  1,1,1,-1,1,0,1,-1,1,1,1,-1,1,0,1,-1,1,1,1-1, #8
                  1,1,1,-1,1,0,1,-1,1,1,1,-1,0,0,1,-1,0,0,1-1, #9
 
-buffer: .space 8192 #extra big buffer, just to be safe!
+  # I implemented doublebuffering to stop the flickering present due to dynamic screen redraws
+  buffer: .space 8192 #extra big buffer, just to be safe!
 
 .globl main
 .text
@@ -77,6 +117,7 @@ init:                               # PROGRAM INITIALIZATION
   mflo $t0                          # $t0 stores result of screen width x height
   la $t1, screen_total_pixels       # $t1 stores the address storing the total # of pixels
   sw $t0, 0($t1)                    # Store the total # of pixels on screen in screen_total_pixels in memory
+
   jal draw_background               # Draw the full background once
 
 core:                               #CORE LOOP
@@ -124,14 +165,13 @@ end_keyboard_input:
   la $t2, enemy_y
   lw $t2 ($t2)
   li $t3, 32
-  bgt		$t2, $t3, skip_check_enemy_collision	# if $t2 > 32 then skip check
+  bgt		$t2, $t3, skip_check_enemy_collision # if there's no enemy on screen, we save on processing by skipping it's collision check
   check_enemy_collision:
   la, $t1, doodler_x
   lw $t1, ($t1)
   la $t3, enemy_x
   lw $t3, ($t3)
-  #$t0: doodler y, $t1, doodler x, $t2, enemy y, $t3 enemy x
-  #Check if doodler above, or to the left
+  #Check if doodler above, or to the left of enemy, skip collision logic if he is
   addi $t0, $t0, 3
   addi $t1, $t1, 3
   ble	$t0, $t2, skip_check_enemy_collision
@@ -140,13 +180,14 @@ end_keyboard_input:
   addi $t1, $t1, -3
   addi $t2, $t2, 2
   addi $t3, $t3, 2
+  #Check if doodler below, or to the right of enemy, skip collision logic if he is
   bgt $t0, $t2, skip_check_enemy_collision
   bge $t1, $t3, skip_check_enemy_collision
   la $t0, doodler_has_shield
   lw $t1, ($t0)
-  bgtz $t1, remove_shield
+  bgtz $t1, remove_shield                   #If doodler has a shield, remove it, else, gameover!
   j gameover
-  remove_shield:
+  remove_shield:                            #Remove doodler's shield, remove enemy from screen
   sw $zero, ($t0)
   la $t0, enemy_y
   li $t1, 32
@@ -157,14 +198,13 @@ end_keyboard_input:
   la $t2, shield_y
   lw $t2 ($t2)
   li $t3, 32
-  bgt		$t2, $t3, skip_check_shield_collision	# if $t2 > 32 then skip check
-  check_shieldenemy_collision:
+  bgt		$t2, $t3, skip_check_shield_collision	# if there's no shield on screen, we save on processing by skipping it's collision check
+  check_shield_collision:
   la, $t1, doodler_x
   lw $t1, ($t1)
   la $t3, shield_x
   lw $t3, ($t3)
-  #$t0: doodler y, $t1, doodler x, $t2, shield y, $t3 shield x
-  #Check if doodler above, or to the left
+   #Check if doodler above, or to the left of shield, skip collision logic if he is
   addi $t0, $t0, 3
   addi $t1, $t1, 3
   ble	$t0, $t2, skip_check_shield_collision
@@ -196,16 +236,17 @@ end_keyboard_input:
   la $t4, doodler_current_jump # $t4 stores the doodler's cur jump height address
   lw $t5 ($t4)                 # $t5 stores the doodler's cur jump height
   bgtz $t5, end_platform_collision_loop #if the doodler is moving upwards, don't check for platform collisions
-  #Note: Should probably check this ^ before loading everything else for effiency's sake
+  #Note: Should probably check this ^ before loading everything else for effiency's sake 
+  #Note 2: Ran out of time to do this + check I didn't break anything :)
 platform_collision_loop:
   beq $t2, $t3 end_platform_collision_loop
   lw $t6 0($t2)                # $t6 stores x pos of current platform
   lw $t7 4($t2)                # $t7 stores y pos of current platform
-  #if doodler y is one pixel above platform...
+  #if doodler y is not one pixel above platform, skip collision logic
   sub		$t7, $t7, $t1
   addi	$t7, $t7, -3
   bne		$t7, $zero, platform_not_touching
-  #if doodler x is between platform start and end...
+  #if doodler x is not between platform start and end, skip collision logic
   addi $t6, $t6, -2
   blt		$t0, $t6, platform_not_touching
   addi $t6, $t6, 7
@@ -318,7 +359,7 @@ scroll_screen_end:
   la $t0, difficulty_counter
   lw $t1, ($t0)
   li $t2, 250
-  bne		$t1, $t2, increase_difficulty_end	# if $t0 != $t1 then increase_difficulty_end
+  bne		$t1, $t2, increase_difficulty_end	# if $t1 != $t2 then go to increase_difficulty_end
   increase_difficulty:
   sw $zero ($t0)                          # Reset difficulty counter
   la $t3, enemy_y                         # Put an enemy at the top of the screen
@@ -367,8 +408,8 @@ scroll_screen_end:
   spawn_shield_end:
 
   #Redraw Screen
-  la $t0 doodler_has_shield
-  lw $t0 ($t0)
+  la $t0 doodler_has_shield       #if the doodler has a shield, we make him blue, otherwise draw him the regular doodler colour
+  lw $t0 ($t0)                    
   bgtz $t0, doodler_col_shield
 doodler_col_no_shield:
  la $a0, col_doodler
@@ -377,7 +418,7 @@ doodler_col_shield:
   la $a0, col_blue
 doodler_col_end: 
  
-  jal draw_doodler
+  jal draw_doodler                 # run all the individual methods responsible for drawing objects
   la $a0, col_platform
   jal draw_platforms
   la $a0, col_red
@@ -386,7 +427,7 @@ doodler_col_end:
   jal draw_shield
   jal draw_score
 
-  jal load_buffer
+  jal load_buffer                   # Load screen from buffer
   
   #Sleep
   li $v0, 32
@@ -398,8 +439,8 @@ doodler_col_end:
 #TERMINATION
 gameover:
 jal draw_background            # Draw the full background once
-jal load_buffer
-jal draw_gameover              # Draw the gameover screen/text
+jal load_buffer                # Load it from buffer
+jal draw_gameover              # Draw the gameover screen/text (This doesn't bother buffering)
 wait_restart:
   li $v0, 32
   la $t0, screen_refresh
@@ -528,8 +569,8 @@ draw_gameover:                 # Draw the gameover text
   la $t3, bye_text
   li $t5, -1
   li $t6, -2
-gameover_loop:
-  lw $t4, ($t3)
+gameover_loop:                        #iterate over the array that stores offsets from leftmost entry in the row and draw in pixels to memory
+  lw $t4, ($t3)                       #if we see a -1, we move down a row, if we see a -2, we've reached the end of the array
   beq $t4, $t5, gameover_jump_row
   beq $t4, $t6, gameover_end
   add $t7, $t4, $t0
@@ -575,7 +616,7 @@ draw_enemy:                   # Draws the enemy at the x,y position stored in me
 
 reset_values:
 ####################################################################################################
-  la $t0, doodler_x
+  la $t0, doodler_x               #Exceptionally boring method, just returns all values to their initial states
   li $t1, 15
   sw $t1, ($t0)
   la $t0, doodler_y
@@ -645,41 +686,38 @@ draw_shield:                   # Draws the shield at the x,y position stored in 
                                  # $a2 the x position
                                  # $a3 the y position
 ####################################################################################################
-  #lw $t0, display_address	     # $t0 stores the base address for display
   la $t0, buffer
   lw $a0, ($a0)
   li $t1, 4                       
-  mult $t1, $a2                          #TODO do with hshifting for efficiency
+  mult $t1, $a2                  #TODO do with shifting for efficiency
   mflo $t1
   add $t0, $t0, $t1
   li $t1, 128
   mult $t1, $a3
   mflo $t1
   add $t0, $t0, $t1  
- # la $t1, col_white            # $t1 stores the address storing the number colour
- # lw $t1 ($t1)                 # $t1 stores the number colour
   la $t2, numbers              # $t2 stores the address of the mnumber array
-  li $t3, 80                   # Why 60? word size = 4, 15 pixels in a number + line jump indicator -1s, we get 20*4=80
+  li $t3, 80                   # Why 80? word size = 4, 15 pixels in a number + line jump indicator -1s, we get 20*4=80
   mult $a1, $t3
   mflo $t3
   add $t2, $t2, $t3            # increment t2 to the start of the data represnting the number in $a0
   li $t5, 80
   add $t5, $t2, $t5 
-draw_number_loop_start:
-  beq $t2, $t5, draw_number_loop_end
-  lw $t6 ($t2)
+draw_number_loop_start:                 #The idea here is iterating over the subarray representing the number, which will always be 80 bits in our case
+  beq $t2, $t5, draw_number_loop_end   
+  lw $t6 ($t2)                          
   bgtz $t6, draw_number_one
   bltz $t6, draw_number_negative_one
-  draw_number_zero:
+  draw_number_zero:                     #If we see a 0, draw nothing, then move to the next position on screen
   addi $t0, $t0, 4
   addi $t2, $t2, 4
   j draw_number_loop_start
-draw_number_one:
+draw_number_one:                        #If we see a 1, we draw the pixel in, then move to the next position on screen
   sw $a0, ($t0)
   addi $t0, $t0, 4
   addi $t2, $t2, 4
   j draw_number_loop_start
-draw_number_negative_one:
+draw_number_negative_one:               #If we see a -1, jump down a row and continue
   addi $t0, $t0, 116
   addi $t2, $t2, 4
 j draw_number_loop_start
@@ -690,37 +728,33 @@ jr $ra
 
 draw_score:
 ####################################################################################################
-  move $s7 $ra
+  move $s7 $ra              #Since we call other methods, need to store the return address somewhere they won't touch
 
-  la $s0 score
+  la $s0 score              #Load the score
   lw $s0 ($s0)
 
   
   
-  li $s1, 10
+  li $s1, 10                #Get the 1s digit of the score with via mod with div
   div $s0, $s1
   mfhi $a1
-  
   li $a2, 16
   li $a3, 1
   la $a0, col_white
-  jal draw_number
+  jal draw_number            #draw 1s digit
 
-  li $s1, 10
+  li $s1, 10                #Get the 10s digit of the score with via shifting digits right with div then mod with div
   div $s0, $s1
   mflo $a1
   li $s1, 10
   div $a1, $s1
   mfhi $a1
-  #li $v0, 1
-  #move $a0, $a1
-  #syscall
   li $a2, 11
   li $a3, 1
   la $a0, col_white
-  jal draw_number
+  jal draw_number           #draw 10s digit
 
-  li $s1, 100
+  li $s1, 100               #Get the 100s digit of the score with via shifting digits right with div then mod with div
   div $s0, $s1
   mflo $a1
   li $s1, 10
@@ -729,9 +763,9 @@ draw_score:
   li $a2, 6
   li $a3, 1
   la $a0, col_white
-  jal draw_number
+  jal draw_number           #draw 100s digit
 
-  li $s1, 1000
+  li $s1, 1000              #Get the 1o0s digit of the score with via shifting digits right with div then mod with div
   div $s0, $s1
   mflo $a1
   li $s1, 10
@@ -740,34 +774,32 @@ draw_score:
   li $a2, 1
   li $a3, 1
   la $a0, col_white
-  jal draw_number
+  jal draw_number           #draw 1000s digit
 
-  jr $s7
+  jr $s7                    #Exit function
 
 
-  erase_score:               # Draws the filled out-colour background of the screen
+  erase_score:               # Fills the top 6 rows with background colour, to erase previously rendered score
 ####################################################################################################
-  #lw $t0, display_address	     # $t0 stores the base address for display
   la $t0, buffer
-  la $t1, col_background      # $t1 stores the address storing the background colour
+  la $t1, col_background       # $t1 stores the address storing the background colour
   lw $t1, ($t1)	               # $t1 stores the background colour
-  #la $t2, screen_total_pixels  # $t2 stores the address storing the total number of pixels onscreen
-  #lw $t2, ($t2)	               # $t2 stores the total number of pixels onscreen
-  li $t2, 192
+  li $t2, 192                  # $t2 stores the number of pixels to draw
   sll $t2, $t2, 2              # $t2 stores # pixels * 4
 erase_score_loopinit:
   add $t2, $t0, $t2            # $t2 stores the memory adress we see when we want to stop the loop
 erase_score_while:
-  beq	$t0, $t2, erase_score_end	           # if $t0 == $t2 then jump to end 
+  beq	$t0, $t2, erase_score_end # if $t0 == $t2 then jump to end 
   sw $t1, 0($t0)               # write background colour to pixel
   addi $t0, $t0 4              # $t0 increments by 4, ie move to next pixel
   j erase_score_while
 erase_score_end:  
   jr $ra                       # Exit Function
   
-  load_buffer:
-  lw $t0, display_address
-  la $t1, buffer
+  load_buffer:                        # Load the buffer to the screen memory space
+####################################################################################################
+  lw $t0, display_address             # iterates over the buffer, display memory space and dumps values from buffer to screen
+  la $t1, buffer                      # Not very exciting, very helpful
   li $t2, 4096
   add $t2, $t0, $t2
   buffer_loop_start:
