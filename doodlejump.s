@@ -22,7 +22,7 @@
 # 2.  Shields (for protection of doodler)
 #
 # Link to video demonstration for final submission:
-# - (insert YouTube / MyMedia / other URL here). 
+# https://youtu.be/rrcKJKCmqzs
 #
 # Any additional information that the TA needs to know:
 # - No additional info, have a nice day!
